@@ -1,9 +1,11 @@
 # Sorry, Connection Pool's Closed
 
-*In a hurry? There's a TL;DR at the bottom.*
+*In a hurry? There's a [TL;DR](#tl-dr) at the bottom.*
 
 In theory, the process of debugging is simple: Isolate the cause of the issue, then correct the mistake in code. Now, most developers will tell you that each of these steps can get quite tricky. Maybe the environment does not allow you to use a debugger to step through code, or you cannot see where the error occurs because it's somewhere deep in a framework you use, or the bug is volatile and only happens under high workload, and so on.
+
 A common shortcut to not have to spend too much time on isolating the cause is using whatever error output you get, e.g. an error code or an exception's message, and searching for that on the web. This is almost scarily effective, as long as the technologies you use are common enough. Someone else will have had your problem before. Someone else will have raised an issue in the issue tracker of the affected software. Naturally, such an effective shortcut is used often, and isolating the cause "the hard way" becomes the exception rather than the norm.
+
 However, relying on what you find during your web search has its risks. I'm not even talking about the case where nobody has had your problem before. Sometimes, you find plenty of results that kind of look like your problem, with suggested and accepted solutions that kind of look like they would work. You try them, but then they don't solve your problem. It's frustrating. Why did it work for these people but not for me? Is my setup different? Am I doing something else wrong? What am I missing?
 This is a story about exactly such a scenario, which reinforced a lesson I've already learned from previous bugs:
 
@@ -32,11 +34,10 @@ Later I got word that this issue already happened *sometimes* before I implement
 The building service uses Entity Framework Core (or EF Core). Our pattern for database access was simple. In `Startup.cs`, we registered a `DbContext` for all our repositories to use:
 
 ```C# Code
-            var npgsqlConnection = new NpgsqlConnection(connectionString);
-            services.AddDbContext<MyDbContext>(options => options.UseNpgsql(
-                npgsqlConnection,
-                options => options.MigrationsAssembly("Project.Namespace")));
-
+var npgsqlConnection = new NpgsqlConnection(connectionString);
+services.AddDbContext<MyDbContext>(options => options.UseNpgsql(
+    npgsqlConnection,
+    options => options.MigrationsAssembly("Project.Namespace")));
 ```
 
 In each repository, we can then simply declare a `DbContext` instance, and ASP.NET will inject it for us (whether the repository pattern is actually necessary with `DbContext` is a fair question which will not be addressed here).
@@ -83,11 +84,10 @@ Refreshing the frontend, I couldn't believe my eyes: Every repository method log
 Dreading having to dive through the Postgresql manual to try and find the reason why it's only providing a single connection at a time, I went back into the all too familiar `Startup.cs` to change the dependency lifetimes back to how they were before, just to confirm changing the lifetimes didn't do anything. I glanced at the code block for registering the `DbContext` again:
 
 ```C# Code
-            var npgsqlConnection = new NpgsqlConnection(connectionString);
-            services.AddDbContext<MyDbContext>(options => options.UseNpgsql(
-                npgsqlConnection,
-                options => options.MigrationsAssembly("Project.Namespace")));
-
+var npgsqlConnection = new NpgsqlConnection(connectionString);
+services.AddDbContext<MyDbContext>(options => options.UseNpgsql(
+    npgsqlConnection,
+    options => options.MigrationsAssembly("Project.Namespace")));
 ```
 If you already caught the mistake when first looking at this snippet at the start of this post, good catch! I certainly didn't. If you didn't, take a look at this line specifically:
 
@@ -102,9 +102,9 @@ I shook my head in disbelief. Then I laughed at myself. We were explicitly creat
 The fix was easy:
 
 ```C# Code
-            services.AddDbContext<MyDbContext>(options => options.UseNpgsql(
-                connectionString,
-                options => options.MigrationsAssembly("Project.Namespace")));
+services.AddDbContext<MyDbContext>(options => options.UseNpgsql(
+    connectionString,
+    options => options.MigrationsAssembly("Project.Namespace")));
 ```
 
 Passing the connection string instead of an already created connection allowed ASP.NET to open connections as needed and everything worked smoothly. After refreshing the frontend roughly 100 times to confirm this bug was definitely not happening anymore, I was done.
